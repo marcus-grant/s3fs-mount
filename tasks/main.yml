@@ -1,2 +1,38 @@
 ---
 # tasks file for s3fs-mount
+- name: ensure s3fs is installed
+  apt: name=s3fs state=present
+
+- name: ensure local s3fs mount directories exist
+  file: path='{{ item.mount }}' state=directory
+  loop: '{{ s3fs_mounts }}'
+  when: item.mount is defined
+
+- name: ensure local s3fs cache directory exists
+  file: path='{{ item.cache }}' state=directory
+  loop: '{{ s3fs_mounts }}'
+  when: item.cache is defined
+
+- name: ensure password file for s3fs is correct
+  template:
+    src: ./templates/s3fs-password.j2
+    dest: '{{ ansible_env.HOME }}/s3fs-password'
+    mode: '600'
+
+# These two blocks create mounts either on not using a local file cache or with
+# If there is a item.cache defined in s3fs_mounts, the non-cached task skips it
+- name: 'mount all S3FS FUSE mounts locally (non-cached)'
+  command: >
+    /usr/bin/s3fs {{ item.bucket }} {{ item.mount }}
+    -o passwd_file={{ ansible_env.HOME }}/s3fs-password
+    -o url={{ item.url }}
+  loop: '{{ s3fs_mounts }}'
+  when: item.cache is not defined
+
+- name: 'mount all S3FS FUSE mounts locally (cached)'
+  command: >
+    /usr/bin/s3fs {{ item.bucket }} {{ item.mount }}
+    -o passwd_file={{ ansible_env.HOME }}/s3fs-password
+    -o url={{ item.url }} -o use_cache={{ item.cache }}
+  loop: '{{ s3fs_mounts }}'
+  when: item.cache is defined
