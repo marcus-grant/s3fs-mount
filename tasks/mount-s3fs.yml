@@ -1,0 +1,56 @@
+---
+- name: ensure local s3fs mount directories exist
+  file:
+    path: '{{ mount_args.mount }}'
+    state: directory
+    owner: '{{ mount_args.owner }}'
+  when: mount_args.mount is defined
+
+- name: ensure local s3fs cache directory exists
+  file:
+    path: '{{ mount_args.cache }}'
+    state: directory
+    owner: '{{ mount_args.owner }}'
+  when: mount_args.cache is defined
+
+- name: run process command to check for previous mount at same location
+  command: '/bin/ps -ef'
+  register: pscmd
+
+- name: find user id for s3fs_mounts.owner
+  command: '/bin/id -u {{ mount_args.owner }}'
+  register: mount_uid
+
+- name: find group id for s3fs_mounts.owner
+  command: '/bin/id -g {{ mount_args.owner }}'
+  register: mount_gid
+
+# - debug:
+#     msg: 'mounted'
+#   when: pscmd.stdout is search(mount_args.mount)
+
+# These 2 blocks create mounts either not using a local file cache or with
+# If there's a cache defined in s3fs_mounts, the non-cached task skips it
+- name: 'mount all S3FS FUSE mounts locally (non-cached)'
+  # become: true
+  # become_user: '{{ mount_args.owner | default(ansible_user) }}'
+  command: >
+    /usr/bin/s3fs {{ mount_args.bucket }} {{ mount_args.mount }}
+    -o passwd_file={{ ansible_env.HOME }}/s3fs-password
+    -ouid={{ mount_uid.stdout }},gid={{ mount_gid.stdout }}
+    -oallow_other,mp_umask=007
+    -o url={{ mount_args.url }}
+  when: (mount_args.cache is not defined
+    and not pscmd.stdout is search(mount_args.mount))
+
+- name: 'mount all S3FS FUSE mounts locally (cached)'
+  # become: true
+  # become_user: '{{ mount_args.owner | default(ansible_user) }}'
+  command: >
+    /usr/bin/s3fs {{ mount_args.bucket }} {{ mount_args.mount }}
+    -o passwd_file={{ ansible_env.HOME }}/s3fs-password
+    -ouid={{ mount_uid.stdout }},gid={{ mount_gid.stdout }}
+    -oallow_other,mp_umask=007
+    -o url={{ mount_args.url }} -o use_cache={{ mount_args.cache }}
+  when: (mount_args.cache is defined
+    and not pscmd.stdout is search(mount_args.mount))
